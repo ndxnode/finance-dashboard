@@ -1,2 +1,3 @@
 instructions/
 backend/.env
+node_modules

@@ -1,5 +1,4 @@
 const { Configuration, PlaidApi, PlaidEnvironments } = require('plaid');
-const fs = require('fs');
 
 const configuration = new Configuration({
   basePath: PlaidEnvironments[process.env.PLAID_ENV],
@@ -12,34 +11,43 @@ const configuration = new Configuration({
 });
 
 const plaidClient = new PlaidApi(configuration);
+
+// In-memory storage for access token
 let accessToken = null;
 
-// Function to save access token to a file
+// Function to save access token
 const saveAccessToken = (token) => {
-  fs.writeFileSync('access_token.txt', token);
+  accessToken = token;
 };
 
-// Function to load access token from a file
+// Function to load access token
 const loadAccessToken = () => {
-  try {
-    return fs.readFileSync('access_token.txt', 'utf8');
-  } catch (error) {
-    return null;
-  }
+  return accessToken;
 };
-
-// Load access token on startup
-accessToken = loadAccessToken();
 
 exports.createLinkToken = async () => {
-  const response = await plaidClient.linkTokenCreate({
-    user: { client_user_id: 'local-user' },
-    client_name: 'Finance Dashboard',
-    products: ['transactions'],
-    country_codes: ['US'],
-    language: 'en',
-  });
-  return response.data.link_token;
+  try {
+    console.log('Attempting to create link token...');
+    console.log('Plaid environment:', process.env.PLAID_ENV);
+    console.log('Plaid client ID:', process.env.PLAID_CLIENT_ID);
+    console.log('Plaid secret defined:', !!process.env.PLAID_SECRET);
+
+    const response = await plaidClient.linkTokenCreate({
+      user: { client_user_id: 'local-user' },
+      client_name: 'Finance Dashboard',
+      products: ['transactions'],
+      country_codes: ['US'],
+      language: 'en',
+    });
+    console.log('Plaid linkTokenCreate response:', response.data);
+    return response.data.link_token;
+  } catch (error) {
+    console.error('Error in createLinkToken:', error);
+    if (error.response) {
+      console.error('Error response:', error.response.data);
+    }
+    throw error;
+  }
 };
 
 exports.exchangePublicToken = async (publicToken) => {
@@ -71,4 +79,26 @@ exports.getTransactions = async (startDate, endDate) => {
     end_date: endDate,
   });
   return response.data.transactions;
+};
+
+exports.clearAccessToken = () => {
+  accessToken = null;
+};
+
+exports.getAccountBalance = async () => {
+  if (!accessToken) {
+    throw new Error('No access token available');
+  }
+  const response = await plaidClient.accountsBalanceGet({
+    access_token: accessToken,
+  });
+  
+  let totalBalance = 0;
+  response.data.accounts.forEach(account => {
+    if (account.type === 'depository') {
+      totalBalance += account.balances.current;
+    }
+  });
+  
+  return totalBalance;
 };
